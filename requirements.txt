@@ -7,3 +7,5 @@ httpx
 pypdf
 google-genai
 anthropic
+python-dotenv
+pytest

@@ -46,7 +46,7 @@ def search(business_id: str, question: str, k: int = config.TOP_K) -> list[Hit]:
             ):
                 rows.setdefault(r[0], {"r": r, "rrf": 0.0, "kr": r[5], "vs": None})["rrf"] += 1 / (RRF_K + rank)
 
-        qvec = providers.embed([question], task="RETRIEVAL_QUERY")
+        qvec = providers.embed([question], task="query")
         if qvec:
             for rank, r in enumerate(
                 conn.execute(

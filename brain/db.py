@@ -13,6 +13,7 @@ def connect() -> psycopg.Connection:
 
 
 def migrate() -> None:
-    sql = (Path(__file__).parent.parent / "sql" / "001_init.sql").read_text()
+    """Apply every sql/*.sql in name order. Each file is idempotent (IF NOT EXISTS)."""
     with psycopg.connect(config.DATABASE_URL, autocommit=True) as conn:
-        conn.execute(sql)
+        for f in sorted((Path(__file__).parent.parent / "sql").glob("*.sql")):
+            conn.execute(f.read_text())

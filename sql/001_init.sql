@@ -5,6 +5,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS businesses (
   id          text PRIMARY KEY,
   name        text NOT NULL,
+  settings    jsonb NOT NULL DEFAULT '{}',  -- owner_email, callback_promise, timezone
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 
@@ -27,7 +28,7 @@ CREATE TABLE IF NOT EXISTS chunks (
   body         text NOT NULL,
   tsv          tsvector GENERATED ALWAYS AS
                  (to_tsvector('english', heading || ' ' || body)) STORED,
-  embedding    vector(768)              -- NULL when no embedding provider is configured
+  embedding    vector(1024)             -- NULL when no embedding provider is configured
 );
 
 CREATE INDEX IF NOT EXISTS chunks_business_idx ON chunks (business_id);

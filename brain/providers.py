@@ -1,27 +1,59 @@
 """Embedding and LLM providers. Swappable, and every one of them is optional."""
+import httpx
+
 from . import config
 
 
-def embed(texts: list[str], task: str = "RETRIEVAL_DOCUMENT") -> list[list[float]] | None:
-    if not config.GEMINI_API_KEY:
-        return None
-    from google import genai
-    from google.genai import types
+def _nvidia(path: str, payload: dict) -> dict:
+    resp = httpx.post(
+        f"{config.NVIDIA_BASE_URL}/{path}",
+        headers={"Authorization": f"Bearer {config.NVIDIA_API_KEY}"},
+        json=payload,
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
-    client = genai.Client(api_key=config.GEMINI_API_KEY)
-    out: list[list[float]] = []
-    for i in range(0, len(texts), 100):
-        resp = client.models.embed_content(
-            model=config.EMBED_MODEL,
-            contents=texts[i : i + 100],
-            config=types.EmbedContentConfig(task_type=task, output_dimensionality=config.EMBED_DIM),
+
+def embed(texts: list[str], task: str = "passage") -> list[list[float]] | None:
+    """task is "passage" for stored chunks, "query" for questions (asymmetric retrieval models)."""
+    if config.EMBED_PROVIDER == "nvidia":
+        out: list[list[float]] = []
+        for i in range(0, len(texts), 50):
+            data = _nvidia(
+                "embeddings",
+                {"model": config.NVIDIA_EMBED_MODEL, "input": texts[i : i + 50],
+                 "input_type": task, "encoding_format": "float", "truncate": "END"},
+            )
+            out.extend(d["embedding"] for d in sorted(data["data"], key=lambda d: d["index"]))
+        return out
+    if config.EMBED_PROVIDER == "gemini":
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=config.GEMINI_API_KEY)
+        task_type = "RETRIEVAL_QUERY" if task == "query" else "RETRIEVAL_DOCUMENT"
+        out = []
+        for i in range(0, len(texts), 100):
+            resp = client.models.embed_content(
+                model=config.GEMINI_EMBED_MODEL,
+                contents=texts[i : i + 100],
+                config=types.EmbedContentConfig(task_type=task_type, output_dimensionality=config.EMBED_DIM),
+            )
+            out.extend(e.values for e in resp.embeddings)
+        return out
+    return None
+
+
+def complete(system: str, user: str, max_tokens: int = 600) -> str | None:
+    if config.LLM_PROVIDER == "nvidia":
+        data = _nvidia(
+            "chat/completions",
+            {"model": config.NVIDIA_CHAT_MODEL, "temperature": 0, "max_tokens": max_tokens,
+             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]},
         )
-        out.extend(e.values for e in resp.embeddings)
-    return out
-
-
-def complete(system: str, user: str) -> str | None:
-    if config.LLM_PROVIDER == "gemini" and config.GEMINI_API_KEY:
+        return data["choices"][0]["message"]["content"]
+    if config.LLM_PROVIDER == "gemini":
         from google import genai
         from google.genai import types
 
@@ -29,16 +61,17 @@ def complete(system: str, user: str) -> str | None:
         resp = client.models.generate_content(
             model=config.GEMINI_MODEL,
             contents=user,
-            config=types.GenerateContentConfig(system_instruction=system, temperature=0),
+            config=types.GenerateContentConfig(system_instruction=system, temperature=0,
+                                               max_output_tokens=max_tokens),
         )
         return resp.text
-    if config.LLM_PROVIDER == "claude" and config.ANTHROPIC_API_KEY:
+    if config.LLM_PROVIDER == "claude":
         import anthropic
 
         client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
         resp = client.messages.create(
             model=config.CLAUDE_MODEL,
-            max_tokens=600,
+            max_tokens=max_tokens,
             temperature=0,
             system=system,
             messages=[{"role": "user", "content": user}],
