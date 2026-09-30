@@ -47,6 +47,25 @@ consultation Rs 99–500, scaling Rs 1,499–3,000, root canal Rs 3,000–8,000,
 aligners Rs 50,000–2,00,000. FAQ topics follow the most common patient questions (anxiety, pregnancy,
 aftercare, kids' first visit).
 
+## Langflow
+The owner-facing layer: one flow, **Chat Input → Business Brain → Chat Output**, in `flows/brain.json`.
+The Business Brain node calls `POST /chat`. Its fields are the business ID and the API URL, so pointing the
+same flow at another business is a one-field edit on the canvas. Each Playground session is its own brain
+session, so handoff details carry across turns.
+
+![Flow on the Langflow canvas](docs/langflow-canvas.png)
+![A real Playground conversation: cited answer, then handoff](docs/langflow-playground.png)
+
+```bash
+.venv/bin/uvicorn brain.api:app --port 8000     # the brain
+langflow run                                     # separate venv; tested on Langflow 1.12.4
+# Langflow: New Flow → Import → flows/brain.json, then open the Playground
+```
+`flows/brain_component.py` is the node's source; `python -m flows.build` regenerates `brain.json` from a
+running Langflow, so node templates always match the installed version. It is a custom node, not the stock
+API Request node: API Request takes its body as a fixed key/value table, so the customer's message can't be
+wired into it without extra plumbing nodes or hand-built JSON that breaks on a quote character.
+
 ## Eval results
 | Mode | Answerable | Tanglish | Abstain | Cross-tenant | Injection | Total |
 |---|---|---|---|---|---|---|
@@ -63,5 +82,4 @@ answerable (min 0.21) and unanswerable (max 0.34) questions overlap, so the thre
 2. Langfuse tracing: cost + latency per answer
 3. Weekly report from `queries` + `handoffs` (unanswered questions = FAQ gaps)
 4. Google Calendar + Gmail providers behind the same functions; MCP server wrapper
-5. Langflow flow over this API so the owner edits it visually
-6. Move DB to Supabase
+5. Move DB to Supabase
