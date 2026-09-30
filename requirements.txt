@@ -1,0 +1,9 @@
+psycopg[binary]
+pgvector
+numpy
+fastapi
+uvicorn
+httpx
+pypdf
+google-genai
+anthropic
