@@ -150,3 +150,25 @@ def test_draft_reply_is_grounded_or_holds():
     assert "14,000" in ok["body"] and ok["reason"] == "reply" and "[1]" not in ok["body"]
     hold = drafts.draft_reply(CLINIC, "patient@example.com", "Do you do hair transplants?")
     assert hold["reason"] == "reply_needs_human" and "2 working hours" in hold["body"]
+
+
+# --- ingest --------------------------------------------------------------------
+
+def test_adding_an_embedding_key_later_backfills_unchanged_sources(tmp_path, monkeypatch):
+    from brain import config, ingest, providers
+
+    biz = f"test-{uuid.uuid4().hex[:8]}"
+    src = tmp_path / "faq.md"
+    src.write_text("# FAQ\n\n## Parking\nFree parking behind the clinic.\n")
+    monkeypatch.setattr(config, "EMBED_PROVIDER", "none")
+    assert ingest.ingest(biz, "Test", [str(src)])["added"] == 1
+
+    monkeypatch.setattr(config, "EMBED_PROVIDER", "fake")
+    monkeypatch.setattr(providers, "embed", lambda texts, task="passage": [[0.1] * config.EMBED_DIM for _ in texts])
+    assert ingest.ingest(biz, "Test", [str(src)])["updated"] == 1  # same text, but now embedded
+    assert ingest.ingest(biz, "Test", [str(src)])["unchanged"] == 1
+    with connect() as conn:
+        missing = conn.execute(
+            "SELECT count(*) FROM chunks WHERE business_id = %s AND embedding IS NULL", (biz,)).fetchone()[0]
+        conn.execute("DELETE FROM businesses WHERE id = %s", (biz,))
+    assert missing == 0

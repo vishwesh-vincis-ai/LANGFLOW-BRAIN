@@ -21,7 +21,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env              # paste NVIDIA_API_KEY
 .venv/bin/python -m brain.seed    # sample clinic + salon
 .venv/bin/python -m evals.run     # answer-quality evals (51 cases)
-.venv/bin/python -m pytest -q     # handoff, calendar, drafts (17 tests)
+.venv/bin/python -m pytest -q     # handoff, calendar, drafts (18 tests)
 .venv/bin/uvicorn brain.api:app --port 8000
 ```
 
@@ -37,8 +37,9 @@ cp .env.example .env              # paste NVIDIA_API_KEY
 
 ## Providers
 First key found wins: `NVIDIA_API_KEY` → `GEMINI_API_KEY` → `ANTHROPIC_API_KEY`. No key = keyword search +
-extractive answers (the offline baseline). NVIDIA defaults: `meta/llama-3.3-70b-instruct` for chat,
-`nvidia/nv-embedqa-e5-v5` (1024-d) for embeddings.
+extractive answers (the offline baseline). NVIDIA defaults: `nvidia/nemotron-3-super-120b-a12b` (thinking off) for chat,
+`nvidia/llama-nemotron-embed-vl-1b-v2` (truncated to 1024-d) for embeddings. The previous defaults
+(`meta/llama-3.3-70b-instruct`, `nvidia/nv-embedqa-e5-v5`) reached end of life in August 2026.
 
 ## Sample data
 Smile Point Dental is **fictional**. Its prices sit inside publicly reported Chennai ranges (2025–26):
@@ -50,12 +51,15 @@ aftercare, kids' first visit).
 | Mode | Answerable | Tanglish | Abstain | Cross-tenant | Injection | Total |
 |---|---|---|---|---|---|---|
 | Offline (no key) | 30/36 | 1/3 | 6/6 | 2/2 | 4/4 | 43/51 (84%) |
-| NVIDIA | pending | | | | | |
+| NVIDIA (hybrid) | 36/36 | 2/3 | 6/6 | 2/2 | 4/4 | 50/51 (98%) |
 
 Offline abstain/injection passes are cheap: there is no model to trick. The NVIDIA row is the real test.
+NVIDIA latency: p50 1.3 s, p95 2.8 s. The one miss is `x02` ("Clinic enga irukku?"): the embedder ranks the
+Languages chunk above Location, so it is a retrieval miss. `MIN_VECTOR_SIM` can't fix it: similarities for
+answerable (min 0.21) and unanswerable (max 0.34) questions overlap, so the threshold stays at 0.30.
 
 ## Next
-1. NVIDIA run → tune `MIN_VECTOR_SIM` → publish the numbers above
+1. Fix Tanglish retrieval (x02): transliterate/translate the query before embedding, or add Tanglish aliases to FAQ headings
 2. Langfuse tracing: cost + latency per answer
 3. Weekly report from `queries` + `handoffs` (unanswered questions = FAQ gaps)
 4. Google Calendar + Gmail providers behind the same functions; MCP server wrapper

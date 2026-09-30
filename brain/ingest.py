@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 
-from . import providers
+from . import config, providers
 from .db import connect
 
 MAX_CHARS = 900
@@ -66,10 +66,13 @@ def ingest(business_id: str, business_name: str, uris: list[str]) -> dict:
             title, text = read_source(uri)
             digest = hashlib.sha256(text.encode()).hexdigest()
             row = conn.execute(
-                "SELECT id, content_hash FROM documents WHERE business_id = %s AND source_uri = %s",
+                "SELECT d.id, d.content_hash, bool_or(c.embedding IS NULL) FROM documents d "
+                "LEFT JOIN chunks c ON c.document_id = d.id "
+                "WHERE d.business_id = %s AND d.source_uri = %s GROUP BY d.id",
                 (business_id, uri),
             ).fetchone()
-            if row and row[1] == digest:
+            # Unchanged text is skipped, unless it was ingested without embeddings and a provider is now set.
+            if row and row[1] == digest and not (row[2] and config.EMBED_PROVIDER != "none"):
                 stats["unchanged"] += 1
                 continue
 

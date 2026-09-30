@@ -1,16 +1,23 @@
 """Embedding and LLM providers. Swappable, and every one of them is optional."""
+import time
+
 import httpx
 
 from . import config
 
 
 def _nvidia(path: str, payload: dict) -> dict:
-    resp = httpx.post(
-        f"{config.NVIDIA_BASE_URL}/{path}",
-        headers={"Authorization": f"Bearer {config.NVIDIA_API_KEY}"},
-        json=payload,
-        timeout=60,
-    )
+    # The hosted endpoints return 429/5xx under load; back off instead of failing the whole eval run.
+    for attempt in range(5):
+        resp = httpx.post(
+            f"{config.NVIDIA_BASE_URL}/{path}",
+            headers={"Authorization": f"Bearer {config.NVIDIA_API_KEY}"},
+            json=payload,
+            timeout=90,
+        )
+        if resp.status_code not in (429, 500, 502, 503, 504) or attempt == 4:
+            break
+        time.sleep(2 ** attempt)
     resp.raise_for_status()
     return resp.json()
 
@@ -23,7 +30,8 @@ def embed(texts: list[str], task: str = "passage") -> list[list[float]] | None:
             data = _nvidia(
                 "embeddings",
                 {"model": config.NVIDIA_EMBED_MODEL, "input": texts[i : i + 50],
-                 "input_type": task, "encoding_format": "float", "truncate": "END"},
+                 "input_type": task, "encoding_format": "float", "truncate": "END",
+                 "dimensions": config.EMBED_DIM},
             )
             out.extend(d["embedding"] for d in sorted(data["data"], key=lambda d: d["index"]))
         return out
@@ -50,6 +58,8 @@ def complete(system: str, user: str, max_tokens: int = 600) -> str | None:
         data = _nvidia(
             "chat/completions",
             {"model": config.NVIDIA_CHAT_MODEL, "temperature": 0, "max_tokens": max_tokens,
+             # Nemotron reasons by default; grounded answers need the answer, not the scratchpad.
+             "chat_template_kwargs": {"enable_thinking": False},
              "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]},
         )
         return data["choices"][0]["message"]["content"]
