@@ -1,5 +1,6 @@
 """Ingest files and URLs into the brain. Re-running is safe: unchanged sources are skipped."""
 import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -10,14 +11,17 @@ from .db import connect
 
 MAX_CHARS = 900
 OVERLAP = 150
-# Bump when normalize() or chunk() changes, so already-ingested sources are rebuilt on the next sync.
-CHUNKER_VERSION = "2"
-
 DAYS = {"Mon": "Monday", "Tue": "Tuesday", "Tues": "Tuesday", "Wed": "Wednesday", "Thu": "Thursday",
         "Thur": "Thursday", "Thurs": "Thursday", "Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday"}
-# A capitalised abbreviation counts as a day only with a period ("Fri.") or when a time, "Closed" or a
-# range follows ("Mon - Thu: 8am", "Sun 10:00"). "Sat on the chair" and "sun protection" stay as they are.
-DAY_ABBR = re.compile(r"\b(Mon|Tues?|Wed|Thu(?:rs?)?|Fri|Sat|Sun)(?:\.|(?=:?\s*(?:\d|[Cc]losed|[-–—&,/]|to\b)))")
+_ABBR = r"(?:Mon|Tues?|Wed|Thu(?:rs?)?|Fri|Sat|Sun)"
+_DAY = rf"(?:{_ABBR}\b\.?|(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b)"
+_JOIN = r"\s*(?:[-–—&,/]|\b(?:to|thru|through|and)\b)\s*"
+# A capitalised abbreviation counts as a day only inside a run of days ("Mon–Sat", "Sat/Sun", "Mon thru Fri")
+# or when a time or "Closed" follows ("Fri. Closed", "Sun 10:00"). Punctuation alone is not enough:
+# "Sun-kissed", "Sun & Sand", "Sat-nav" and "sun protection" stay as they are.
+DAY_RUN = re.compile(rf"\b{_DAY}(?:{_JOIN}{_DAY})+")
+DAY_ABBR = re.compile(rf"\b({_ABBR})\b\.?")
+DAY_BEFORE_TIME = re.compile(rf"\b({_ABBR})\b\.?(?=:?\s*(?:\d|[Cc]losed\b))")
 FULL_DAY = re.compile(r"\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b")
 
 
@@ -37,10 +41,15 @@ def read_source(uri: str) -> tuple[str, str]:
     return path.stem, path.read_text(encoding="utf-8")
 
 
+def _spell(m: re.Match) -> str:
+    return DAYS[m.group(1)]
+
+
 def normalize(text: str) -> str:
     """Spell out abbreviated weekdays. "Fri. Closed" shares no word with "Are you open on Fridays?" and its
     embedding lands under MIN_VECTOR_SIM, so without this an hours question retrieves nothing."""
-    return DAY_ABBR.sub(lambda m: DAYS[m.group(1)], text)
+    text = DAY_RUN.sub(lambda run: DAY_ABBR.sub(_spell, run.group(0)), text)
+    return DAY_BEFORE_TIME.sub(_spell, text)
 
 
 def chunk(text: str) -> list[tuple[str, str]]:
@@ -71,6 +80,11 @@ def chunk(text: str) -> list[tuple[str, str]]:
     return out
 
 
+def _stored_pieces(conn, doc_id: int) -> list[tuple[str, str]]:
+    return [tuple(r) for r in conn.execute(
+        "SELECT heading, body FROM chunks WHERE document_id = %s ORDER BY ord", (doc_id,)).fetchall()]
+
+
 def ingest(business_id: str, business_name: str, uris: list[str]) -> dict:
     stats = {"added": 0, "updated": 0, "unchanged": 0, "chunks": 0}
     with connect() as conn:
@@ -82,19 +96,24 @@ def ingest(business_id: str, business_name: str, uris: list[str]) -> dict:
             if not uri.startswith(("http://", "https://")):
                 uri = str(Path(uri).resolve())  # one file = one document, however the path was spelled
             title, text = read_source(uri)
-            digest = hashlib.sha256(f"{CHUNKER_VERSION}\n{text}".encode()).hexdigest()
+            pieces = chunk(normalize(text))
+            # Hash what we store, not the raw text: a chunker change rebuilds only the documents it changes.
+            digest = hashlib.sha256(json.dumps(pieces).encode()).hexdigest()
             row = conn.execute(
                 "SELECT d.id, d.content_hash, bool_or(c.embedding IS NULL) FROM documents d "
                 "LEFT JOIN chunks c ON c.document_id = d.id "
                 "WHERE d.business_id = %s AND d.source_uri = %s GROUP BY d.id",
                 (business_id, uri),
             ).fetchone()
+            if row and row[1] != digest and _stored_pieces(conn, row[0]) == pieces:
+                # Hashed by an older release, but the chunks are the same: keep their embeddings.
+                conn.execute("UPDATE documents SET content_hash = %s WHERE id = %s", (digest, row[0]))
+                row = (row[0], digest, row[2])
             # Unchanged text is skipped, unless it was ingested without embeddings and a provider is now set.
             if row and row[1] == digest and not (row[2] and config.EMBED_PROVIDER != "none"):
                 stats["unchanged"] += 1
                 continue
 
-            pieces = chunk(normalize(text))
             vectors = providers.embed([f"{h}\n{b}" for h, b in pieces]) or [None] * len(pieces)
             with conn.transaction():
                 if row:
