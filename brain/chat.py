@@ -103,6 +103,23 @@ def _finish(conn, business_id: str, handoff_id: int, name: str, phone: str, retu
     }
 
 
+def _contact_only(conn, business_id: str, session_id: str, message: str) -> dict | None:
+    """After a handoff, "Maria Lopez, 512 555 0142" again is a confirmation, not a question for the team."""
+    country = _country(conn, business_id)
+    name, phone = _extract(message, country)
+    rest = re.sub(r"[\W_]+", "", _phone(message, country)[1])
+    if not phone or not (name or not rest):
+        return None
+    # A changed number goes to every open handoff in this thread, so the team calls the right one.
+    conn.execute(
+        "UPDATE handoffs SET phone = %s, name = coalesce(%s, name) "
+        "WHERE business_id = %s AND session_id = %s AND status = 'open'",
+        (phone, name, business_id, session_id),
+    )
+    return {"reply": f"Thanks, we have you down on {phone}. Our team will call you {_promise(conn, business_id)}.",
+            "state": "handoff_open"}
+
+
 def _start(conn, business_id: str, session_id: str, question: str, prefix: str) -> dict:
     handoff_id = conn.execute(
         "INSERT INTO handoffs (business_id, session_id, question) VALUES (%s, %s, %s) RETURNING id",
@@ -146,6 +163,10 @@ def chat(business_id: str, session_id: str, message: str) -> dict:
 
         if WANTS_HUMAN.search(message):
             return _start(conn, business_id, session_id, message, "Sure.")
+
+        if _known_contact(conn, business_id, session_id)[1] and (
+                r := _contact_only(conn, business_id, session_id, message)):
+            return r
 
     r = answer(business_id, message)
     if r["answered"]:

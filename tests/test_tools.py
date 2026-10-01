@@ -118,6 +118,21 @@ def test_second_unanswerable_question_joins_the_same_handoff(no_hours_tenant):
     assert "Saturdays" in draft["body"] and "cleaning without insurance" in draft["body"]
 
 
+def test_contact_details_again_after_handoff_are_not_a_new_question(no_hours_tenant):
+    s = sid()
+    chat(no_hours_tenant, s, "Are you open on Saturdays?")
+    assert chat(no_hours_tenant, s, "Maria Lopez, 512 555 0142")["state"] == "handoff_open"
+
+    r = chat(no_hours_tenant, s, "Maria Lopez, 512 555 0142")
+    assert r["state"] == "handoff_open"
+    assert "I don't have that information" not in r["reply"]
+    assert "+1 512-555-0142" in r["reply"] and len(r["reply"]) < 160
+    with connect() as conn:
+        questions = [q for (q,) in conn.execute(
+            "SELECT question FROM handoffs WHERE business_id = %s AND session_id = %s", (no_hours_tenant, s))]
+    assert questions == ["Are you open on Saturdays?"]
+
+
 def test_customer_can_decline_handoff():
     s = sid()
     chat(CLINIC, s, "Do you offer home visits?")
