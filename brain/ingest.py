@@ -10,6 +10,15 @@ from .db import connect
 
 MAX_CHARS = 900
 OVERLAP = 150
+# Bump when normalize() or chunk() changes, so already-ingested sources are rebuilt on the next sync.
+CHUNKER_VERSION = "2"
+
+DAYS = {"Mon": "Monday", "Tue": "Tuesday", "Tues": "Tuesday", "Wed": "Wednesday", "Thu": "Thursday",
+        "Thur": "Thursday", "Thurs": "Thursday", "Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday"}
+# A capitalised abbreviation counts as a day only with a period ("Fri.") or when a time, "Closed" or a
+# range follows ("Mon - Thu: 8am", "Sun 10:00"). "Sat on the chair" and "sun protection" stay as they are.
+DAY_ABBR = re.compile(r"\b(Mon|Tues?|Wed|Thu(?:rs?)?|Fri|Sat|Sun)(?:\.|(?=:?\s*(?:\d|[Cc]losed|[-–—&,/]|to\b)))")
+FULL_DAY = re.compile(r"\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b")
 
 
 def read_source(uri: str) -> tuple[str, str]:
@@ -28,6 +37,12 @@ def read_source(uri: str) -> tuple[str, str]:
     return path.stem, path.read_text(encoding="utf-8")
 
 
+def normalize(text: str) -> str:
+    """Spell out abbreviated weekdays. "Fri. Closed" shares no word with "Are you open on Fridays?" and its
+    embedding lands under MIN_VECTOR_SIM, so without this an hours question retrieves nothing."""
+    return DAY_ABBR.sub(lambda m: DAYS[m.group(1)], text)
+
+
 def chunk(text: str) -> list[tuple[str, str]]:
     """Split on markdown headings, then window long sections. Returns (heading, body) pairs."""
     sections: list[tuple[str, str]] = []
@@ -44,6 +59,9 @@ def chunk(text: str) -> list[tuple[str, str]]:
 
     out = []
     for h, body in sections:
+        # A section listing three or more weekdays is a schedule; say so, so "what are your hours" finds it.
+        if len(set(FULL_DAY.findall(body))) >= 3 and not re.search(r"hour|timing", h, re.I):
+            h = f"{h} (opening hours)".strip()
         start = 0
         while start < len(body):
             out.append((h, body[start : start + MAX_CHARS]))
@@ -64,7 +82,7 @@ def ingest(business_id: str, business_name: str, uris: list[str]) -> dict:
             if not uri.startswith(("http://", "https://")):
                 uri = str(Path(uri).resolve())  # one file = one document, however the path was spelled
             title, text = read_source(uri)
-            digest = hashlib.sha256(text.encode()).hexdigest()
+            digest = hashlib.sha256(f"{CHUNKER_VERSION}\n{text}".encode()).hexdigest()
             row = conn.execute(
                 "SELECT d.id, d.content_hash, bool_or(c.embedding IS NULL) FROM documents d "
                 "LEFT JOIN chunks c ON c.document_id = d.id "
@@ -76,7 +94,7 @@ def ingest(business_id: str, business_name: str, uris: list[str]) -> dict:
                 stats["unchanged"] += 1
                 continue
 
-            pieces = chunk(text)
+            pieces = chunk(normalize(text))
             vectors = providers.embed([f"{h}\n{b}" for h, b in pieces]) or [None] * len(pieces)
             with conn.transaction():
                 if row:

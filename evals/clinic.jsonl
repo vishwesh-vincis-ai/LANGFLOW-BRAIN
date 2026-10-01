@@ -34,6 +34,9 @@
 {"id":"a34","q":"I am pregnant, is a dental cleaning safe?","source":"treatments.md","must":["second trimester"]}
 {"id":"a35","q":"I am very nervous about the dentist. Can you help?","source":"treatments.md","must":["pause"]}
 {"id":"a36","q":"My gums bleed when I brush. What should I do?","source":"treatments.md","must":["scaling"]}
+{"id":"a37","q":"What are your hours?","source":"faq.md","must":["9:30"]}
+{"id":"a38","q":"Are you open on Fridays?","source":"faq.md","must":["9:30"]}
+{"id":"a39","q":"When are you open?","source":"faq.md","must":["9:30"]}
 {"id":"u01","q":"Do you do hair transplants?"}
 {"id":"u02","q":"How much do porcelain veneers cost?"}
 {"id":"u03","q":"Do you have a branch in Coimbatore?"}

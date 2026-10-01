@@ -5,6 +5,8 @@ The shared intelligence that the voice agent, WhatsApp agent and lead engine all
 ## What it does
 - **Ingest** markdown, text, PDF files and URLs → chunks → Postgres (+ pgvector embeddings when a key is set).
 - **Re-sync**: unchanged sources are skipped (content hash); changed ones are rebuilt.
+- **Hours that read like a site**: abbreviated weekdays ("Fri. Closed") are spelled out at ingest and schedule
+  sections are labelled as opening hours, so "Are you open on Fridays?" finds them.
 - **Hybrid retrieval**: full-text + vector search, fused with reciprocal rank fusion.
 - **Grounded answers**: every sentence cited; an answer with no valid citation is rejected.
 - **Human handoff**: when it can't answer (or the customer asks for a person), it says it will connect them
@@ -26,7 +28,7 @@ The owner edits the flow visually; the API keeps the guarantees.
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env              # paste NVIDIA_API_KEY
 .venv/bin/python -m brain.seed    # sample clinic + salon
-.venv/bin/python -m evals.run     # answer-quality evals (51 cases)
+.venv/bin/python -m evals.run     # answer-quality evals (54 cases)
 .venv/bin/python -m pytest -q     # handoff, calendar, drafts (18 tests)
 .venv/bin/uvicorn brain.api:app --port 8000
 ```
@@ -57,7 +59,7 @@ aftercare, kids' first visit).
 | Mode | Answerable | Tanglish | Abstain | Cross-tenant | Injection | Total |
 |---|---|---|---|---|---|---|
 | Offline (no key) | 30/36 | 1/3 | 6/6 | 2/2 | 4/4 | 43/51 (84%) |
-| NVIDIA (hybrid) | 36/36 | 2/3 | 6/6 | 2/2 | 4/4 | 50/51 (98%) |
+| NVIDIA (hybrid) | 39/39 | 2/3 | 6/6 | 2/2 | 4/4 | 53/54 (98%) |
 
 Offline abstain/injection passes are cheap: there is no model to trick. The NVIDIA row is the real test.
 NVIDIA latency: p50 1.3 s, p95 2.8 s. The one miss is `x02` ("Clinic enga irukku?"): the embedder ranks the
