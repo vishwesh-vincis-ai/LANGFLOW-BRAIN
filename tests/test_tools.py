@@ -44,6 +44,19 @@ def test_extract(msg, name, phone):
     assert _extract(msg) == (name, phone)
 
 
+@pytest.mark.parametrize("msg,country,name,phone", [
+    ("Maria Lopez, 512 555 0142", "IN", "Maria Lopez", "+1 512-555-0142"),   # US shape wins anywhere
+    ("James Carter 512-555-0187", "US", "James Carter", "+1 512-555-0187"),
+    ("(512) 555-0119", "US", None, "+1 512-555-0119"),
+    ("+1 512 555 0100", "IN", None, "+1 512-555-0100"),
+    ("5125550100", "US", None, "+1 512-555-0100"),                          # bare digits follow the business
+    ("9840012345", "IN", None, "+91 9840012345"),
+    ("98400 12345", "US", None, "+91 9840012345"),                         # Indian shape wins anywhere
+])
+def test_extract_us_and_indian_numbers(msg, country, name, phone):
+    assert _extract(msg, country) == (name, phone)
+
+
 def test_unanswerable_question_hands_off_and_collects_details():
     s = sid()
     r = chat(CLINIC, s, "Do you do hair transplants?")
