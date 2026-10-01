@@ -15,6 +15,12 @@ The shared intelligence that the voice agent, WhatsApp agent and lead engine all
   a human approves and sends.
 - **Tenant isolation**: every row and every query is scoped by `business_id`; evals check for leaks.
 
+## Langflow
+A custom **Business Brain** component and an importable flow live in [`langflow/`](langflow/README.md).
+The owner edits the flow visually; the API keeps the guarantees.
+
+![Business Brain flow in Langflow](langflow/flow-canvas.png)
+
 ## Run
 ```bash
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -63,5 +69,4 @@ answerable (min 0.21) and unanswerable (max 0.34) questions overlap, so the thre
 2. Langfuse tracing: cost + latency per answer
 3. Weekly report from `queries` + `handoffs` (unanswered questions = FAQ gaps)
 4. Google Calendar + Gmail providers behind the same functions; MCP server wrapper
-5. Langflow flow over this API so the owner edits it visually
 6. Move DB to Supabase
