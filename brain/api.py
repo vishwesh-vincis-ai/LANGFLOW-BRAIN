@@ -1,10 +1,13 @@
 """One API that projects 1, 2 and 3 call. Run: uvicorn brain.api:app --port 8000"""
 from datetime import date, datetime
+from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from . import booking, db, drafts
+from . import booking, dashboard, db, drafts
 from .answer import answer
 from .chat import chat
 from .ingest import ingest
@@ -109,6 +112,50 @@ def draft_reply_endpoint(req: ReplyReq):
 @app.get("/drafts")
 def drafts_endpoint(business_id: str, status: str = "draft"):
     return drafts.list_drafts(business_id, status)
+
+
+class DraftStatusReq(BaseModel):
+    business_id: str
+    status: Literal["approved", "discarded"]
+
+
+class BusinessReq(BaseModel):
+    business_id: str
+
+
+DASHBOARD = Path(__file__).parent.parent / "dashboard" / "index.html"
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard_page():
+    """Owner console. The page is a body fragment (it is also published as a static snapshot), so wrap it."""
+    return ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body>'
+            + DASHBOARD.read_text() + "</body></html>")
+
+
+@app.get("/dashboard/businesses")
+def dashboard_businesses():
+    return dashboard.businesses()
+
+
+@app.get("/dashboard/data")
+def dashboard_data(business_id: str):
+    return dashboard.snapshot(business_id)
+
+
+@app.post("/drafts/{draft_id}/status")
+def draft_status_endpoint(draft_id: int, req: DraftStatusReq):
+    if not dashboard.set_draft_status(req.business_id, draft_id, req.status):
+        raise HTTPException(404, "no pending draft with that id")
+    return {"id": draft_id, "status": req.status}
+
+
+@app.post("/handoffs/{handoff_id}/close")
+def close_handoff_endpoint(handoff_id: int, req: BusinessReq):
+    if not dashboard.close_handoff(req.business_id, handoff_id):
+        raise HTTPException(404, "no open handoff with that id")
+    return {"id": handoff_id, "status": "closed"}
 
 
 @app.get("/health")

@@ -15,6 +15,26 @@ The shared intelligence that the voice agent, WhatsApp agent and lead engine all
   a human approves and sends.
 - **Tenant isolation**: every row and every query is scoped by `business_id`; evals check for leaks.
 
+## Owner console
+A dashboard served by the brain itself at **`/dashboard`** ([`dashboard/`](dashboard/index.html)). Live, it reads the
+database and lets the owner approve or discard email drafts, mark handoffs as called back, and chat with the
+brain. `python -m dashboard.export` freezes it with one business's data into `dashboard/snapshot.html`, a static
+page for sharing (actions and live chat are disabled there).
+
+| Tab | What the owner sees |
+|---|---|
+| Overview | Questions handled, % answered with a source, who's waiting for a call back, bookings, reply time; what customers ask about; questions with no answer in the docs (FAQ gaps); recent questions with the brain's actual reply |
+| Inbox | Handoffs (name, number, question) and email drafts awaiting approval |
+| Calendar | Next 7 days of bookings and open slots |
+| Knowledge | Ingested documents, sections, how many are embedded, last sync |
+| Quality | The eval scorecard and every case, filterable to failures |
+| Try it | Chat with the brain on that business's documents |
+
+`python -m brain.demo_traffic` replays 30 scripted customers and 9 bookings through the real system so the console
+has data to show; every reply in it is the brain's own output.
+
+![Owner console](dashboard/console-overview.png)
+
 ## Langflow
 A custom **Business Brain** component and an importable flow live in [`langflow/`](langflow/README.md).
 The owner edits the flow visually; the API keeps the guarantees.
@@ -27,8 +47,8 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env              # paste NVIDIA_API_KEY
 .venv/bin/python -m brain.seed    # sample clinic + salon
 .venv/bin/python -m evals.run     # answer-quality evals (51 cases)
-.venv/bin/python -m pytest -q     # handoff, calendar, drafts (18 tests)
-.venv/bin/uvicorn brain.api:app --port 8000
+.venv/bin/python -m pytest -q     # handoff, calendar, drafts, phones, dashboard (26 tests)
+.venv/bin/uvicorn brain.api:app --port 8000   # console at http://localhost:8000/dashboard
 ```
 
 ## API
@@ -67,6 +87,6 @@ answerable (min 0.21) and unanswerable (max 0.34) questions overlap, so the thre
 ## Next
 1. Fix Tanglish retrieval (x02): transliterate/translate the query before embedding, or add Tanglish aliases to FAQ headings
 2. Langfuse tracing: cost + latency per answer
-3. Weekly report from `queries` + `handoffs` (unanswered questions = FAQ gaps)
+3. Weekly report email from the console's data (FAQ gaps are already computed)
 4. Google Calendar + Gmail providers behind the same functions; MCP server wrapper
 6. Move DB to Supabase

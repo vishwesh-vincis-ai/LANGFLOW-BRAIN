@@ -1,0 +1,612 @@
+<title>Business Brain Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an owner's console. Sticky top bar (business + data source), tab row, one working view at a time.
+   Summary first (KPI strip), then the charts and queues that need attention. */
+:root {
+  --bg: #f2f6f6;
+  --surface: #ffffff;
+  --sunk: #e8efef;
+  --ink: #13262b;
+  --muted: #5a6e72;
+  --line: #d6e1e1;
+  --accent: #0e7468;
+  --accent-soft: #dcefeb;
+  --s-answered: #00876f;          /* series: answered (validated pair) */
+  --s-handoff: #c4740a;           /* series: passed to team */
+  --track: #dfe7e7;
+  --ok: #1f7a3a; --ok-soft: #e1f2e6;
+  --warn: #8a5a00; --warn-soft: #fbf0d9;
+  --crit: #b3261e; --crit-soft: #f8e1df;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1618; --surface: #142225; --sunk: #0f1b1d; --ink: #e3eeee; --muted: #93a8ab; --line: #24383b;
+    --accent: #4cc2b0; --accent-soft: #163733; --s-answered: #1fa391; --s-handoff: #c98020; --track: #22363a;
+    --ok: #6fd08f; --ok-soft: #143222; --warn: #e8b453; --warn-soft: #3a2c12; --crit: #f08a82; --crit-soft: #3d1c1a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1618; --surface: #142225; --sunk: #0f1b1d; --ink: #e3eeee; --muted: #93a8ab; --line: #24383b;
+  --accent: #4cc2b0; --accent-soft: #163733; --s-answered: #1fa391; --s-handoff: #c98020; --track: #22363a;
+  --ok: #6fd08f; --ok-soft: #143222; --warn: #e8b453; --warn-soft: #3a2c12; --crit: #f08a82; --crit-soft: #3d1c1a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.55 var(--body); margin: 0; }
+h1, h2, h3 { font-family: var(--display); margin: 0; line-height: 1.2; text-wrap: balance; }
+h2 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--mono); }
+.muted { color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* top bar */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top-in { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 12px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+.mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; }
+.mark svg { width: 18px; height: 18px; }
+.brand h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.01em; }
+.brand span { font: 500 11px/1 var(--mono); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.biz { display: flex; align-items: center; gap: 8px; }
+.biz label { font-size: 12px; color: var(--muted); }
+.biz select { background: var(--sunk); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.source { font: 500 11.5px/1 var(--mono); padding: 6px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--sunk); color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.source b { color: var(--ink); font-weight: 500; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.source.live .dot { background: var(--ok); }
+.tabs { max-width: 1180px; margin: 0 auto; padding-inline: 12px; display: flex; gap: 2px; overflow-x: auto; }
+.tabs button { background: none; border: 0; padding: 10px 12px; cursor: pointer; color: var(--muted); font-weight: 500; border-bottom: 2px solid transparent; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.badge { font: 500 11px/1 var(--mono); background: var(--s-handoff); color: var(--surface); border-radius: 99px; padding: 3px 6px; }
+
+main { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 22px 56px; }
+.view { display: grid; gap: 18px; }
+.note { font-size: 13px; color: var(--muted); background: var(--sunk); border: 1px dashed var(--line); border-radius: 10px; padding: 10px 14px; }
+.note b { color: var(--ink); font-weight: 600; }
+
+/* KPI strip */
+.kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: var(--line); gap: 1px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.kpi { background: var(--surface); padding: 14px 16px; display: grid; gap: 2px; align-content: start; }
+.kpi .v { font: 700 1.7rem/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.kpi .l { font-size: 12.5px; color: var(--muted); }
+.kpi .s { font: 12px var(--mono); color: var(--muted); }
+@media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpis .kpi:last-child { grid-column: 1 / -1; } }
+
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.grid3 { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; align-items: start; }
+@media (max-width: 900px) { .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; min-width: 0; align-content: start; }
+.card-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.card-h .sub { font-size: 12.5px; color: var(--muted); }
+
+/* charts */
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+svg.chart text { fill: var(--muted); font: 12px var(--body); }
+svg.chart text.val { fill: var(--ink); font: 500 12px var(--mono); }
+svg.chart .grid { stroke: var(--line); stroke-width: 1; }
+svg.chart .hit { fill: transparent; cursor: default; }
+.split { display: flex; height: 26px; border-radius: 6px; overflow: hidden; gap: 2px; background: var(--surface); }
+.split div { min-width: 2px; }
+.split-labels { display: flex; justify-content: space-between; font-size: 13px; gap: 10px; flex-wrap: wrap; }
+.split-labels b { font: 600 13px var(--mono); }
+#tip { position: fixed; pointer-events: none; z-index: 20; background: var(--ink); color: var(--surface); font-size: 12.5px; padding: 6px 9px; border-radius: 6px; max-width: 260px; }
+
+/* lists */
+.rows { display: grid; gap: 0; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--line); align-items: start; }
+.row:first-child { border-top: 0; padding-top: 2px; }
+.row .q { overflow-wrap: anywhere; }
+.row .meta { font-size: 12px; color: var(--muted); grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pill { font: 500 11px/1 var(--mono); padding: 4px 7px; border-radius: 99px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.pill svg { width: 10px; height: 10px; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.mute { background: var(--sunk); color: var(--muted); }
+.count { font: 600 13px var(--mono); color: var(--ink); }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 5px 10px; cursor: pointer; font-size: 12.5px; font-weight: 500; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+details summary { cursor: pointer; color: var(--accent); font-size: 12.5px; }
+pre.email { font: 12.5px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--sunk); padding: 12px; border-radius: 8px; margin: 8px 0 0; }
+
+/* calendar */
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 900px) { .week { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.day { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.day h3 { font: 600 13px var(--body); display: flex; justify-content: space-between; }
+.day h3 span { font: 12px var(--mono); color: var(--muted); }
+.appt { border-left: 3px solid var(--s-answered); background: var(--sunk); border-radius: 0 6px 6px 0; padding: 6px 8px; font-size: 12.5px; display: grid; gap: 1px; }
+.appt b { font: 500 12px var(--mono); }
+.empty { font-size: 12.5px; color: var(--muted); }
+
+/* table */
+.tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.filters button { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 5px 12px; cursor: pointer; font-size: 12.5px; }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+/* chat */
+.chat { display: grid; gap: 8px; max-height: 520px; overflow-y: auto; padding: 4px; }
+.msg { max-width: 82%; padding: 9px 12px; border-radius: 12px; white-space: pre-line; overflow-wrap: anywhere; }
+.msg.user { justify-self: end; background: var(--sunk); border-bottom-right-radius: 4px; }
+.msg.bot { justify-self: start; background: var(--accent-soft); border-bottom-left-radius: 4px; }
+.msg .meta { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; font: 12px var(--mono); color: var(--accent); }
+form.ask { display: flex; gap: 8px; }
+form.ask input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 9px 12px; }
+.suggest { display: flex; gap: 6px; flex-wrap: wrap; }
+.suggest button { border: 1px solid var(--line); background: var(--sunk); border-radius: 99px; padding: 4px 10px; font-size: 12.5px; cursor: pointer; }
+.toast { position: fixed; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--surface); padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 30; }
+footer { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 0 32px; font-size: 12.5px; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { .fill-anim { transition: width 0.4s ease; } }
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round"><path d="M12 4a5 5 0 0 0-5 5c0 1.6.8 3 2 4v3h6v-3c1.2-1 2-2.4 2-4a5 5 0 0 0-5-5z"/><path d="M10 20h4"/></svg></div>
+      <div><h1>Business Brain</h1><span>Owner console</span></div>
+    </div>
+    <div class="biz"><label for="biz">Business</label><select id="biz"></select></div>
+    <span class="source" id="source"><span class="dot"></span><span id="sourceText">Loading</span></span>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="t-overview" aria-selected="true" data-view="overview">Overview</button>
+    <button role="tab" id="t-inbox" aria-selected="false" data-view="inbox">Inbox <span class="badge" id="inboxBadge" hidden></span></button>
+    <button role="tab" id="t-calendar" aria-selected="false" data-view="calendar">Calendar</button>
+    <button role="tab" id="t-knowledge" aria-selected="false" data-view="knowledge">Knowledge</button>
+    <button role="tab" id="t-quality" aria-selected="false" data-view="quality">Quality</button>
+    <button role="tab" id="t-try" aria-selected="false" data-view="try">Try it</button>
+  </nav>
+</header>
+
+<main>
+  <div class="note" id="modeNote" hidden></div>
+
+  <section class="view" id="v-overview" style="margin-top:16px">
+    <div class="kpis" id="kpis"></div>
+    <div class="grid3">
+      <div class="card">
+        <div class="card-h"><h2>What happened to each question</h2><span class="sub" id="splitSub"></span></div>
+        <div class="split" id="split" role="img"></div>
+        <div class="split-labels" id="splitLabels"></div>
+        <div class="card-h" style="margin-top:6px"><h2>What customers ask about</h2><span class="sub">by cited section</span></div>
+        <div id="topics"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Gaps in your answers</h2><span class="sub">add these to your FAQ</span></div>
+        <div class="rows" id="gaps"></div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <div class="card-h"><h2>Next 7 days</h2><span class="sub">booked vs open 30-min slots</span></div>
+        <div class="legend"><span><i style="background:var(--s-answered)"></i>Booked</span><span><i style="background:var(--track)"></i>Open</span></div>
+        <div id="weekChart"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Reply time</h2><span class="sub" id="latSub"></span></div>
+        <div id="latChart"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Recent questions</h2><span class="sub">what the brain actually said</span></div>
+      <div class="tablebox"><table>
+        <thead><tr><th>Question</th><th>Outcome</th><th>Reply</th><th>Source</th><th>ms</th></tr></thead>
+        <tbody id="recent"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-inbox" hidden style="margin-top:16px">
+    <div class="grid2">
+      <div class="card">
+        <div class="card-h"><h2>Customers waiting for a call back</h2><span class="sub" id="handoffSub"></span></div>
+        <div class="rows" id="handoffs"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Email drafts to approve</h2><span class="sub">nothing is sent without you</span></div>
+        <div class="rows" id="drafts"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-calendar" hidden style="margin-top:16px">
+    <div class="card-h"><h2>Appointments, next 7 days</h2><span class="sub" id="calSub"></span></div>
+    <div class="week" id="week"></div>
+  </section>
+
+  <section class="view" id="v-knowledge" hidden style="margin-top:16px">
+    <div class="card-h"><h2>What the brain knows</h2><span class="sub">every answer must cite one of these</span></div>
+    <div class="tablebox"><table>
+      <thead><tr><th>Document</th><th>File</th><th>Sections</th><th>Searchable by meaning</th><th>Last synced</th></tr></thead>
+      <tbody id="docs"></tbody>
+    </table></div>
+    <p class="muted" style="font-size:13px">Re-sync skips files whose content hash hasn't changed. Edit a price list, re-run ingest, and the next answer uses the new figure.</p>
+  </section>
+
+  <section class="view" id="v-quality" hidden style="margin-top:16px">
+    <div class="card">
+      <div class="card-h"><h2 id="evalTitle">Eval set</h2><span class="sub" id="evalSub"></span></div>
+      <div id="evalBars"></div>
+    </div>
+    <div class="filters" role="group" aria-label="Filter cases">
+      <button type="button" id="f-all" aria-pressed="true" data-f="all">All cases</button>
+      <button type="button" id="f-fail" aria-pressed="false" data-f="fail">Failures</button>
+      <button type="button" id="f-decline" aria-pressed="false" data-f="decline">Must decline</button>
+    </div>
+    <div class="tablebox"><table>
+      <thead><tr><th>Result</th><th>Category</th><th>Question</th><th>Answer or reason</th><th>Cited</th><th>ms</th></tr></thead>
+      <tbody id="evalRows"></tbody>
+    </table></div>
+  </section>
+
+  <section class="view" id="v-try" hidden style="margin-top:16px">
+    <div class="grid3">
+      <div class="card">
+        <div class="card-h"><h2>Talk to the brain</h2><span class="sub" id="trySub"></span></div>
+        <div class="chat" id="chat" aria-live="polite"></div>
+        <form class="ask" id="askForm"><input id="askInput" autocomplete="off" placeholder="Ask what a customer would ask"><button class="btn primary" id="askBtn" type="submit">Send</button></form>
+        <div class="suggest" id="suggest"></div>
+      </div>
+      <div class="card">
+        <h2>What to try</h2>
+        <p class="muted">A price question gets an answer with its source. A question the documents don't cover gets a handoff: the brain asks for a name and number, then drafts an email to the owner. Asking for "a real person" does the same.</p>
+        <p class="muted">Each answer carries the section it came from. If the model's reply cites nothing valid, it is thrown away.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer id="foot"></footer>
+<div id="tip" hidden></div>
+
+<script>
+const SNAPSHOT = /*__SNAPSHOT__*/null;
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+const NS = "http://www.w3.org/2000/svg";
+const svgEl = (tag, attrs) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
+const ICON = {
+  ok: '<svg viewBox="0 0 10 10"><path d="M1.5 5.2l2.2 2.2 4.8-4.8" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>',
+  warn: '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.6" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M5 3v2.3" stroke="currentColor" stroke-width="1.5"/></svg>',
+  mute: '<svg viewBox="0 0 10 10"><path d="M2 5h6" stroke="currentColor" stroke-width="1.6"/></svg>',
+};
+const pill = (kind, label) => { const p = el("span", "pill " + kind); p.innerHTML = ICON[kind]; p.append(label); return p; };
+const fmtTime = (iso) => new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
+const fmtDay = (iso) => new Date(iso + (iso.length === 10 ? "T12:00:00" : "")).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+const strip = (t) => (t || "").replace(/\s*\[\d+\]/g, "").trim();
+
+let LIVE = false, DATA = null, BIZ = null, tryFor = null;
+
+/* ---------- tooltip ---------- */
+const tip = $("tip");
+function showTip(e, text) { tip.textContent = text; tip.hidden = false; moveTip(e); }
+function moveTip(e) { const x = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8); tip.style.left = x + "px"; tip.style.top = (e.clientY + 14) + "px"; }
+function hideTip() { tip.hidden = true; }
+function hover(node, text) { node.addEventListener("pointerenter", (e) => showTip(e, text)); node.addEventListener("pointermove", moveTip); node.addEventListener("pointerleave", hideTip); }
+
+/* ---------- data ---------- */
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+}
+async function boot() {
+  try {
+    const list = await api("dashboard/businesses");
+    LIVE = Array.isArray(list) && list.length > 0;
+    if (LIVE) fillBiz(list, list.find((b) => b.id === "smile-point")?.id || list[0].id);
+  } catch { LIVE = false; }
+  if (!LIVE) {
+    if (!SNAPSHOT) { $("sourceText").textContent = "No data: start the brain API"; return; }
+    fillBiz([SNAPSHOT.business], SNAPSHOT.business.id);
+  }
+  await load();
+}
+function fillBiz(list, selected) {
+  const s = $("biz"); s.replaceChildren();
+  list.forEach((b) => { const o = el("option", null, b.name); o.value = b.id; o.selected = b.id === selected; s.append(o); });
+  s.disabled = !LIVE || list.length < 2;
+  BIZ = selected;
+}
+$("biz").addEventListener("change", (e) => { BIZ = e.target.value; session = "console-" + Math.random().toString(36).slice(2, 8); load(); });
+
+async function load() {
+  DATA = LIVE ? await api("dashboard/data?business_id=" + encodeURIComponent(BIZ)) : SNAPSHOT;
+  render();
+}
+
+/* ---------- render ---------- */
+function render() {
+  const d = DATA, q = d.questions;
+  const src = $("source"); src.classList.toggle("live", LIVE);
+  const modelName = d.mode.llm === "none" ? "offline (keyword search, no model)" : d.mode.llm_model;
+  $("sourceText").innerHTML = "";
+  $("sourceText").append(LIVE ? "Live · " : "Recorded snapshot · ", Object.assign(el("b"), { textContent: modelName }));
+
+  const note = $("modeNote");
+  note.hidden = LIVE && d.mode.llm !== "none";
+  note.innerHTML = "";
+  if (!LIVE) note.append(Object.assign(el("b"), { textContent: "Recorded snapshot. " }),
+    `Every number and reply below was produced by the brain from scripted demo customers, captured ${new Date(d.generated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}. Run it on the brain API to approve drafts, close handoffs and chat live.`);
+  if (d.mode.llm === "none") note.append(" ", Object.assign(el("b"), { textContent: "Offline mode: " }),
+    "no language model was connected, so answers are the best-matching section quoted verbatim. Some replies quote a neighbouring section; the Quality tab shows the model-backed run.");
+
+  const open = d.handoffs.filter((h) => h.status === "open").length;
+  const pending = d.drafts.filter((x) => x.status === "draft").length;
+  const pct = q.total ? Math.round(100 * q.answered / q.total) : 0;
+  $("kpis").replaceChildren(...[
+    [q.total, "questions handled", `${d.faq_gaps.length} without an answer`],
+    [pct + "%", "answered with a source", `${q.answered} of ${q.total}`],
+    [open, "waiting for a call back", `${d.collecting} still giving details`],
+    [d.appointments.length, "bookings, next 7 days", `${d.week.reduce((s, w) => s + w.free_slots, 0)} slots open`],
+    [q.p50_ms >= 1000 ? (q.p50_ms / 1000).toFixed(1) + " s" : q.p50_ms + " ms", "median reply time", `p95 ${q.p95_ms >= 1000 ? (q.p95_ms / 1000).toFixed(1) + " s" : q.p95_ms + " ms"}`],
+  ].map(([v, l, s]) => { const k = el("div", "kpi"); k.append(el("span", "v", String(v)), el("span", "l", l)); if (s) k.append(el("span", "s", s)); return k; }));
+
+  const badge = $("inboxBadge"); badge.textContent = open + pending; badge.hidden = !(open + pending);
+
+  renderSplit(q); renderTopics(d.topics); renderGaps(d.faq_gaps); renderWeekChart(d.week); renderLatency(q);
+  renderRecent(d.recent); renderInbox(d); renderCalendar(d); renderDocs(d.documents); renderEvals(d.evals);
+  if (tryFor !== d.business.id) { tryFor = d.business.id; renderTry(d); }   // keep the live conversation across refreshes
+  $("foot").textContent = `${d.business.name} · data from ${new Date(d.generated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })} · Smile Point Dental is a fictional demo tenant.`;
+}
+
+function renderSplit(q) {
+  const s = $("split"); s.replaceChildren();
+  const parts = [["Answered with a source", q.answered, "var(--s-answered)"], ["Passed to the team", q.handed_off, "var(--s-handoff)"]];
+  s.setAttribute("aria-label", parts.map((p) => `${p[0]}: ${p[1]}`).join(", "));
+  parts.forEach(([label, n, color]) => {
+    if (!n) return;
+    const seg = el("div"); seg.style.flex = String(n); seg.style.background = color; hover(seg, `${label}: ${n} (${Math.round(100 * n / q.total)}%)`); s.append(seg);
+  });
+  $("splitLabels").replaceChildren(...parts.map(([label, n, color]) => {
+    const w = el("span"); const i = el("i"); i.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;background:${color}`;
+    w.append(i, label + " ", Object.assign(el("b"), { textContent: n })); return w;
+  }));
+  $("splitSub").textContent = `${q.total} questions`;
+}
+
+function hbars(target, items, opts = {}) {
+  const box = $(target); box.replaceChildren();
+  if (!items.length) { box.append(el("p", "empty", opts.empty || "No data yet.")); return; }
+  const rowH = 26, labelW = opts.labelW || 170, W = chartWidth(box), valW = 36, H = items.length * rowH + 4;
+  const max = Math.max(...items.map((i) => i.value), 1);
+  const svg = svgEl("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": opts.aria || "" });
+  items.forEach((it, i) => {
+    const y = i * rowH + 4, bw = it.value ? Math.max(3, (W - labelW - valW - 8) * it.value / max) : 0;
+    const t = svgEl("text", { x: labelW - 8, y: y + 13, "text-anchor": "end" }); t.textContent = it.label.length > 24 ? it.label.slice(0, 23) + "…" : it.label;
+    svg.append(t);
+    svg.append(svgEl("rect", { x: labelW, y: y + 3, width: W - labelW - valW - 8, height: 14, rx: 4, fill: "var(--track)" }));
+    svg.append(svgEl("rect", { x: labelW, y: y + 3, width: bw, height: 14, rx: 4, fill: opts.color || "var(--s-answered)" }));
+    const v = svgEl("text", { x: labelW + bw + 6, y: y + 14, class: "val" }); v.textContent = it.value; svg.append(v);
+    const hit = svgEl("rect", { x: 0, y, width: W, height: rowH, class: "hit" }); hover(hit, it.tip || `${it.label}: ${it.value}`); svg.append(hit);
+  });
+  box.append(svg);
+}
+
+function renderTopics(topics) {
+  hbars("topics", topics.map((t) => ({ label: t.section, value: t.count, tip: `${t.section} (${t.doc}.md): cited ${t.count}×` })),
+    { aria: "Most cited sections", empty: "No answered questions yet." });
+}
+
+function renderGaps(gaps) {
+  const box = $("gaps"); box.replaceChildren();
+  if (!gaps.length) { box.append(el("p", "empty", "Every question so far had an answer in your documents.")); return; }
+  gaps.forEach((g) => {
+    const r = el("div", "row"); r.append(el("span", "q", g.question), el("span", "count", "×" + g.count));
+    const m = el("div", "meta"); m.append(pill("warn", "no answer in your docs")); r.append(m); box.append(r);
+  });
+}
+
+function renderWeekChart(week) {
+  const box = $("weekChart"); box.replaceChildren();
+  const W = chartWidth(box), H = 190, padL = 28, padB = 26, padT = 10, colW = (W - padL) / week.length, barW = Math.min(34, colW * 0.5);
+  const max = Math.max(...week.map((w) => w.booked + w.free_slots), 1);
+  const ticks = niceTicks(max);
+  const y = (v) => padT + (H - padT - padB) * (1 - v / ticks[ticks.length - 1]);
+  const svg = svgEl("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Booked and open slots per day" });
+  ticks.forEach((t) => { svg.append(svgEl("line", { x1: padL, x2: W, y1: y(t), y2: y(t), class: "grid" })); const l = svgEl("text", { x: padL - 6, y: y(t) + 4, "text-anchor": "end" }); l.textContent = t; svg.append(l); });
+  week.forEach((w, i) => {
+    const cx = padL + colW * i + colW / 2, x = cx - barW / 2;
+    const total = w.booked + w.free_slots;
+    if (w.free_slots) svg.append(svgEl("rect", { x, y: y(total), width: barW, height: Math.max(0, y(w.booked) - y(total) - 2), rx: 4, fill: "var(--track)" }));
+    if (w.booked) svg.append(svgEl("rect", { x, y: y(w.booked), width: barW, height: y(0) - y(w.booked), rx: 4, fill: "var(--s-answered)" }));
+    if (w.booked) { const v = svgEl("text", { x: cx, y: y(total) - 5, "text-anchor": "middle", class: "val" }); v.textContent = w.booked; svg.append(v); }
+    const lab = svgEl("text", { x: cx, y: H - 8, "text-anchor": "middle" }); lab.textContent = fmtDay(w.day).split(",")[0]; svg.append(lab);
+    const hit = svgEl("rect", { x: padL + colW * i, y: padT, width: colW, height: H - padT - padB, class: "hit" });
+    hover(hit, `${fmtDay(w.day)}: ${w.booked} booked, ${w.free_slots} open`); svg.append(hit);
+  });
+  box.append(svg);
+}
+
+// Charts are drawn at the container's real pixel width so 12px text stays 12px.
+function chartWidth(box) { return Math.max(300, Math.round(box.clientWidth || box.parentElement.clientWidth || 560)); }
+
+function niceTicks(max) {
+  const step = max <= 5 ? 1 : max <= 10 ? 2 : max <= 25 ? 5 : 10;
+  const top = Math.ceil(max / step) * step, out = [];
+  for (let v = 0; v <= top; v += step) out.push(v);
+  return out;
+}
+
+function renderLatency(q) {
+  const b = q.latency_hist.buckets, c = q.latency_hist.counts;
+  const lab = (ms) => ms >= 1000 ? ms / 1000 + " s" : ms + " ms";
+  const labels = b.map((ms, i) => (i === 0 ? "≤ " : (lab(b[i - 1]) + "–")) + lab(ms)).concat("> " + lab(b[b.length - 1]));
+  hbars("latChart", labels.map((l, i) => ({ label: l, value: c[i], tip: `${l}: ${c[i]} replies` })), { labelW: 110, aria: "Reply time distribution" });
+  $("latSub").textContent = `median ${q.p50_ms >= 1000 ? (q.p50_ms / 1000).toFixed(1) + " s" : q.p50_ms + " ms"}`;
+}
+
+function renderRecent(recent) {
+  $("recent").replaceChildren(...recent.map((r) => {
+    const tr = el("tr");
+    const o = el("td"); o.append(r.answered ? pill("ok", "answered") : pill("warn", "to team"));
+    tr.append(el("td", null, r.question), o, el("td", "muted", r.answered ? strip(r.answer).slice(0, 140) + (strip(r.answer).length > 140 ? "…" : "") : "Asked for name and number"),
+      el("td", "mono", r.cited || "—"), el("td", "n", String(r.latency_ms)));
+    return tr;
+  }));
+}
+
+function renderInbox(d) {
+  const hb = $("handoffs"); hb.replaceChildren();
+  const open = d.handoffs.filter((h) => h.status === "open");
+  $("handoffSub").textContent = `${open.length} open`;
+  if (!d.handoffs.length) hb.append(el("p", "empty", "No one is waiting."));
+  d.handoffs.forEach((h) => {
+    const r = el("div", "row");
+    r.append(el("span", "q", `“${h.question}”`));
+    const act = el("div", "actions");
+    if (h.status === "open") {
+      const b = el("button", "btn", "Mark called"); b.type = "button"; b.disabled = !LIVE;
+      b.title = LIVE ? "Close this handoff" : "Available when running on the brain API";
+      b.addEventListener("click", () => act_(`handoffs/${h.id}/close`, { business_id: BIZ }, "Handoff closed"));
+      act.append(b);
+    }
+    r.append(act);
+    const m = el("div", "meta");
+    m.append(h.status === "open" ? pill("warn", "waiting") : pill("ok", "called back"), `${h.name} · `, Object.assign(el("span", "mono"), { textContent: h.phone }), ` · ${fmtTime(h.created_at)}`);
+    r.append(m); hb.append(r);
+  });
+
+  const db = $("drafts"); db.replaceChildren();
+  if (!d.drafts.length) db.append(el("p", "empty", "No drafts."));
+  d.drafts.forEach((x) => {
+    const r = el("div", "row");
+    r.append(el("span", "q", x.subject));
+    const act = el("div", "actions");
+    if (x.status === "draft") {
+      [["Approve", "approved", "primary"], ["Discard", "discarded", ""]].forEach(([label, status, cls]) => {
+        const b = el("button", "btn " + cls, label); b.type = "button"; b.disabled = !LIVE;
+        b.title = LIVE ? label + " this draft" : "Available when running on the brain API";
+        b.addEventListener("click", () => act_(`drafts/${x.id}/status`, { business_id: BIZ, status }, status === "approved" ? "Draft approved" : "Draft discarded"));
+        act.append(b);
+      });
+    }
+    r.append(act);
+    const m = el("div", "meta");
+    m.append(x.status === "draft" ? pill("warn", "needs approval") : x.status === "approved" ? pill("ok", "approved") : pill("mute", x.status), `to ${x.to}`);
+    const det = el("details"); det.append(el("summary", null, "Read draft"), Object.assign(el("pre", "email"), { textContent: x.body }));
+    m.append(det); r.append(m); db.append(r);
+  });
+}
+
+async function act_(path, body, done) {
+  try { await api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); toast(done); await load(); }
+  catch (e) { toast("Couldn't update: " + e.message); }
+}
+function toast(text) { const t = el("div", "toast", text); document.body.append(t); setTimeout(() => t.remove(), 2400); }
+
+function renderCalendar(d) {
+  const box = $("week"); box.replaceChildren();
+  $("calSub").textContent = `${d.appointments.length} booked · double-booking blocked by the database`;
+  d.week.forEach((w) => {
+    const day = el("div", "day");
+    const h = el("h3"); h.append(fmtDay(w.day), Object.assign(el("span"), { textContent: `${w.free_slots} open` })); day.append(h);
+    const appts = d.appointments.filter((a) => a.starts_at.slice(0, 10) === w.day || new Date(a.starts_at).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) === w.day);
+    if (!appts.length) day.append(el("p", "empty", "No bookings"));
+    appts.forEach((a) => { const c = el("div", "appt"); c.append(Object.assign(el("b"), { textContent: `${fmtTime(a.starts_at)}–${fmtTime(a.ends_at)}` }), el("span", null, a.service), el("span", "muted", a.name)); day.append(c); });
+    box.append(day);
+  });
+}
+
+function renderDocs(docs) {
+  $("docs").replaceChildren(...docs.map((x) => {
+    const tr = el("tr"), emb = el("td");
+    emb.append(x.embedded === x.sections && x.sections ? pill("ok", `${x.embedded}/${x.sections}`) : x.embedded ? pill("warn", `${x.embedded}/${x.sections}`) : pill("mute", "keyword only"));
+    tr.append(el("td", null, x.title), el("td", "mono", x.source), el("td", "n", String(x.sections)), emb,
+      el("td", "muted", new Date(x.synced_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })));
+    return tr;
+  }));
+}
+
+let evalFilter = "all";
+function renderEvals(ev) {
+  if (!ev) { $("evalTitle").textContent = "No eval run yet"; $("evalBars").replaceChildren(el("p", "empty", "Run python -m showcase.export to score the brain.")); return; }
+  $("evalTitle").textContent = `${ev.pass} of ${ev.total} eval cases pass`;
+  $("evalSub").textContent = `${ev.mode.llm_model} · ${new Date(ev.generated_at).toLocaleDateString("en-IN", { dateStyle: "medium" })}`;
+  const names = { answerable: "Answerable", tanglish: "Tanglish", unanswerable: "Must decline", "cross-tenant": "No data leak", injection: "Prompt injection" };
+  hbars("evalBars", Object.entries(ev.by_category).map(([k, v]) => ({ label: names[k] || k, value: v.pass, tip: `${names[k] || k}: ${v.pass} of ${v.total} pass` })), { labelW: 130, aria: "Eval passes by category" });
+  // show "of N" next to each bar
+  const declineCats = new Set(["unanswerable", "cross-tenant", "injection"]);
+  const rows = ev.cases.filter((c) => evalFilter === "all" || (evalFilter === "fail" && !c.pass) || (evalFilter === "decline" && declineCats.has(c.category)));
+  $("evalRows").replaceChildren(...rows.map((c) => {
+    const tr = el("tr"), res = el("td"); res.append(c.pass ? pill("ok", "pass") : pill("warn", "fail"));
+    tr.append(res, el("td", null, names[c.category] || c.category), el("td", null, c.question),
+      el("td", "muted", c.pass ? (c.answered ? strip(c.answer) : "Declined and offered a handoff") : c.why),
+      el("td", "mono", c.citations.join(", ")), el("td", "n", String(c.latency_ms)));
+    return tr;
+  }));
+}
+document.querySelectorAll(".filters button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll(".filters button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  evalFilter = b.dataset.f; renderEvals(DATA.evals);
+}));
+
+let session = "console-" + Math.random().toString(36).slice(2, 8);
+function renderTry(d) {
+  const chat = $("chat"); chat.replaceChildren();
+  $("askInput").disabled = !LIVE; $("askBtn").disabled = !LIVE;
+  $("trySub").textContent = LIVE ? "live, on this business's documents" : "recorded conversations (model-backed run)";
+  if (!LIVE) {
+    (d.evals?.conversations || []).forEach((c) => {
+      chat.append(Object.assign(el("p", "muted"), { textContent: c.title, style: "font-size:12px;margin-top:6px" }));
+      c.turns.forEach((t) => { addMsg(t.user, "user"); addMsg(t.bot, "bot", t.citations); });
+    });
+    $("askInput").placeholder = "Live chat works when this console runs on the brain API";
+  } else {
+    addMsg("Ask anything a customer might. I answer from this business's documents, with the source, or I hand you to the team.", "bot");
+  }
+  const sug = $("suggest"); sug.replaceChildren();
+  ["How much is a zirconia crown?", "Are you open on Sunday?", "Do you do hair transplants?", "Can I talk to a real person?"].forEach((s) => {
+    const b = el("button", null, s); b.type = "button"; b.disabled = !LIVE; b.addEventListener("click", () => send(s)); sug.append(b);
+  });
+}
+function addMsg(text, who, cites = []) {
+  const m = el("div", "msg " + who, strip(text));
+  if (cites && cites.length) { const meta = el("div", "meta"); cites.forEach((c) => meta.append(el("span", null, "↳ " + c))); m.append(meta); }
+  $("chat").append(m); $("chat").scrollTop = $("chat").scrollHeight;
+}
+async function send(text) {
+  if (!text.trim() || !LIVE) return;
+  addMsg(text, "user"); $("askInput").value = "";
+  try {
+    const r = await api("chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ business_id: BIZ, session_id: session, message: text }) });
+    addMsg(r.reply, "bot", (r.citations || []).map((c) => `${c.source.split("/").pop()} › ${c.section}`));
+    load();
+  } catch (e) { addMsg("Couldn't reach the brain: " + e.message, "bot"); }
+}
+$("askForm").addEventListener("submit", (e) => { e.preventDefault(); send($("askInput").value); });
+
+/* ---------- tabs ---------- */
+function show(view) {
+  document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === view)));
+  document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== "v-" + view));
+  try { localStorage.setItem("brain-console-tab", view); } catch {}
+  if (DATA) render();   // charts in a newly shown tab measure their width now
+}
+let resizeT; window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => DATA && render(), 150); });
+document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+const hash = location.hash.slice(1);
+let saved = null; try { saved = localStorage.getItem("brain-console-tab"); } catch {}
+show(["overview", "inbox", "calendar", "knowledge", "quality", "try"].includes(hash) ? hash : saved || "overview");
+
+boot();
+</script>

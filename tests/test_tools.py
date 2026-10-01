@@ -185,3 +185,24 @@ def test_adding_an_embedding_key_later_backfills_unchanged_sources(tmp_path, mon
             "SELECT count(*) FROM chunks WHERE business_id = %s AND embedding IS NULL", (biz,)).fetchone()[0]
         conn.execute("DELETE FROM businesses WHERE id = %s", (biz,))
     assert missing == 0
+
+
+# --- owner dashboard ---------------------------------------------------------
+
+def test_dashboard_snapshot_counts_and_actions():
+    from brain import dashboard
+
+    s = sid()
+    chat(CLINIC, s, "Do you offer home visits?")
+    chat(CLINIC, s, "Rekha 98400 33333")
+    snap = dashboard.snapshot(CLINIC)
+    assert snap["questions"]["total"] >= 1 and snap["questions"]["handed_off"] >= 1
+    assert any(g["question"] == "Do you offer home visits?" for g in snap["faq_gaps"])
+    handoff = next(h for h in snap["handoffs"] if h["name"] == "Rekha" and h["status"] == "open")
+    draft = next(d for d in snap["drafts"] if "Rekha" in d["subject"] and d["status"] == "draft")
+
+    assert dashboard.close_handoff(CLINIC, handoff["id"])
+    assert not dashboard.close_handoff(CLINIC, handoff["id"])          # already closed
+    assert not dashboard.set_draft_status(SALON, draft["id"], "approved")  # other tenant can't touch it
+    assert dashboard.set_draft_status(CLINIC, draft["id"], "approved")
+    assert len(snap["week"]) == 7 and all(w["free_slots"] >= 0 for w in snap["week"])
