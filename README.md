@@ -29,7 +29,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env              # paste NVIDIA_API_KEY
 .venv/bin/python -m brain.seed    # sample clinic + salon
 .venv/bin/python -m evals.run     # answer-quality evals (54 cases)
-.venv/bin/python -m pytest -q     # handoff, calendar, drafts (18 tests)
+.venv/bin/python -m pytest -q     # handoff, calendar, drafts, ingest (52 tests)
 .venv/bin/uvicorn brain.api:app --port 8000
 ```
 
@@ -58,11 +58,13 @@ aftercare, kids' first visit).
 ## Eval results
 | Mode | Answerable | Tanglish | Abstain | Cross-tenant | Injection | Total |
 |---|---|---|---|---|---|---|
-| Offline (no key) | 30/36 | 1/3 | 6/6 | 2/2 | 4/4 | 43/51 (84%) |
+| Offline (no key) | 31/39 | 1/3 | 6/6 | 2/2 | 4/4 | 44/54 (81%) |
 | NVIDIA (hybrid) | 39/39 | 2/3 | 6/6 | 2/2 | 4/4 | 53/54 (98%) |
 
 Offline abstain/injection passes are cheap: there is no model to trick. The NVIDIA row is the real test.
-NVIDIA latency: p50 1.3 s, p95 2.8 s. The one miss is `x02` ("Clinic enga irukku?"): the embedder ranks the
+NVIDIA latency over three runs: p50 1.0–1.2 s, p95 4.1–6.0 s. The tail is the hosted chat completion
+(the same 21-token reply takes 0.4 s alone and 8–15 s under load); embedding is a flat 0.35 s and our own
+database + Python time is ~20 ms. The one miss is `x02` ("Clinic enga irukku?"): the embedder ranks the
 Languages chunk above Location, so it is a retrieval miss. `MIN_VECTOR_SIM` can't fix it: similarities for
 answerable (min 0.21) and unanswerable (max 0.34) questions overlap, so the threshold stays at 0.30.
 
