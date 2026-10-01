@@ -43,6 +43,11 @@ def _extract(message: str, country: str = "IN") -> tuple[str | None, str | None]
     return name, phone
 
 
+def _is_question(message: str) -> bool:
+    """A bare "ok" or "hmm" is not something to hand to the team; "what about whitening" is."""
+    return "?" in message or len(message.split()) >= 3
+
+
 def _ask_for(missing: list[str]) -> str:
     return {
         ("name", "phone"): "Could you share your name and phone number?",
@@ -126,10 +131,16 @@ def chat(business_id: str, session_id: str, message: str) -> dict:
             if not (new_name or new_phone):
                 # The customer asked something else instead. Answer it, then ask again.
                 r = answer(business_id, message)
+                missing = [f for f, v in (("name", name), ("phone", phone)) if not v]
                 if r["answered"]:
-                    missing = [f for f, v in (("name", name), ("phone", phone)) if not v]
                     return {"reply": f"{r['answer']}\n\nFor your earlier question: {_ask_for(missing)}",
                             "state": "collecting_details", "handoff_id": handoff_id, "citations": r["citations"]}
+                if _is_question(message):
+                    # Another one for the team: same handoff, one call back, and ask for details once.
+                    conn.execute("UPDATE handoffs SET question = question || E'\\n' || %s WHERE id = %s",
+                                 (message, handoff_id))
+                    return {"reply": f"I'll pass that to the team as well. {_ask_for(missing)}",
+                            "state": "collecting_details", "handoff_id": handoff_id}
             missing = [f for f, v in (("name", name), ("phone", phone)) if not v]
             return {"reply": _ask_for(missing), "state": "collecting_details", "handoff_id": handoff_id}
 

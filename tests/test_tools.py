@@ -83,6 +83,41 @@ def test_customer_can_ask_something_else_mid_handoff():
     assert r["state"] == "collecting_details"
 
 
+@pytest.fixture
+def no_hours_tenant(tmp_path):
+    """A business whose documents say nothing about hours or prices."""
+    from brain.ingest import ingest
+
+    biz = f"test-{uuid.uuid4().hex[:8]}"
+    src = tmp_path / "parking.md"
+    src.write_text("# Lakeside Dental\n\n## Parking\nFree parking behind the office.\n")
+    ingest(biz, "Lakeside Dental", [str(src)])
+    yield biz
+    with connect() as conn:
+        conn.execute("DELETE FROM businesses WHERE id = %s", (biz,))
+
+
+def test_second_unanswerable_question_joins_the_same_handoff(no_hours_tenant):
+    s = sid()
+    first = chat(no_hours_tenant, s, "Are you open on Saturdays?")
+    assert first["state"] == "collecting_details"
+
+    r = chat(no_hours_tenant, s, "How much is a cleaning without insurance?")
+    assert r["state"] == "collecting_details" and r["handoff_id"] == first["handoff_id"]
+    assert "pass that to the team as well" in r["reply"]
+    assert r["reply"].count("name and phone") == 1
+    with connect() as conn:
+        rows = conn.execute("SELECT question FROM handoffs WHERE business_id = %s AND session_id = %s",
+                            (no_hours_tenant, s)).fetchall()
+    assert len(rows) == 1
+    assert "Saturdays" in rows[0][0] and "cleaning without insurance" in rows[0][0]
+
+    r = chat(no_hours_tenant, s, "Maria Lopez, 512 555 0142")
+    assert r["state"] == "handoff_open"
+    draft = next(d for d in drafts.list_drafts(no_hours_tenant) if d["id"] == r["draft_id"])
+    assert "Saturdays" in draft["body"] and "cleaning without insurance" in draft["body"]
+
+
 def test_customer_can_decline_handoff():
     s = sid()
     chat(CLINIC, s, "Do you offer home visits?")
