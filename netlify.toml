@@ -1,0 +1,19 @@
+# Business Brain on Netlify: the owner console (web/) + the brain API as one function (netlify/functions/api.mts).
+# Environment variables to set in Netlify (Site configuration → Environment variables):
+#   DATABASE_URL     Supabase transaction-pooler URI (port 6543) for project business-brain
+#   NVIDIA_API_KEY   chat + embeddings
+#   BRAIN_API_KEY    any long random string; agents and the owner send it to change data
+#   DAILY_QUESTION_LIMIT (optional, default 300 per business)
+[build]
+  command = "mkdir -p web/data && cp showcase/results.json web/data/evals.json && cp benchmark/results.json web/data/benchmark.json 2>/dev/null || true"
+  publish = "web"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

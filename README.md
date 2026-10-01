@@ -15,6 +15,20 @@ The shared intelligence that the voice agent, WhatsApp agent and lead engine all
   a human approves and sends.
 - **Tenant isolation**: every row and every query is scoped by `business_id`; evals check for leaks.
 
+## Live site (Netlify)
+The console and the API run on Netlify, backed by Supabase Postgres + pgvector. Visitors chat with the brain;
+other agents connect over MCP (`/api/mcp`) or REST (`/api/*`). Setup: [DEPLOY.md](DEPLOY.md).
+
+| Tab | |
+|---|---|
+| Try it | Live chat with any tenant: the fictional Chennai clinic, or the Austin practices the lead engine built demos for (labelled as unofficial demos) |
+| Compare | Head-to-head against "paste every document into the prompt": accuracy, made-up answers, cost per 1,000 questions, reply time, cost as the knowledge base grows ([benchmark/run.py](benchmark/run.py)) |
+| Overview, Inbox, Calendar, Knowledge, Quality | The owner console; inbox actions and full phone numbers need the owner key |
+| Connect an agent | MCP config, REST examples, Langflow URL |
+
+The serving path is a TypeScript port of the Python brain (`netlify/lib/`): same prompt, same citation gate,
+same handoff state machine. `web/test-api.mjs` runs 15 contract checks against local or live.
+
 ## Owner console
 A dashboard served by the brain itself at **`/dashboard`** ([`dashboard/`](dashboard/index.html)). Live, it reads the
 database and lets the owner approve or discard email drafts, mark handoffs as called back, and chat with the

@@ -5,6 +5,9 @@ import httpx
 
 from . import config
 
+# Token counts from the most recent calls, for cost measurement (benchmark/run.py reads and resets these).
+USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "embed_tokens": 0}
+
 
 def _nvidia(path: str, payload: dict) -> dict:
     # The hosted endpoints return 429/5xx under load; back off instead of failing the whole eval run.
@@ -34,6 +37,7 @@ def embed(texts: list[str], task: str = "passage") -> list[list[float]] | None:
                  "dimensions": config.EMBED_DIM},
             )
             out.extend(d["embedding"] for d in sorted(data["data"], key=lambda d: d["index"]))
+            USAGE["embed_tokens"] += (data.get("usage") or {}).get("prompt_tokens", 0)
         return out
     if config.EMBED_PROVIDER == "gemini":
         from google import genai
@@ -62,6 +66,9 @@ def complete(system: str, user: str, max_tokens: int = 600) -> str | None:
              "chat_template_kwargs": {"enable_thinking": False},
              "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]},
         )
+        u = data.get("usage") or {}
+        USAGE["prompt_tokens"] += u.get("prompt_tokens", 0)
+        USAGE["completion_tokens"] += u.get("completion_tokens", 0)
         return data["choices"][0]["message"]["content"]
     if config.LLM_PROVIDER == "gemini":
         from google import genai

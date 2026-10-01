@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .env
 backup/
+node_modules/
+.env.web
+web/data/
